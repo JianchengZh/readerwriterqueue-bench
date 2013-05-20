@@ -39,18 +39,14 @@ template<class T>
 struct ProducerConsumerQueue {
   typedef T value_type;
 
-  // size must be >= 2.
-  //
-  // Also, note that the number of usable slots in the queue at any
-  // given time is actually (size-1), so if you start with an empty queue,
-  // isFull() will return true after size-1 insertions.
+  // size must be >= 1.
   explicit ProducerConsumerQueue(uint32_t size)
-    : size_(size)
-    , records_(static_cast<T*>(std::malloc(sizeof(T) * size)))
+    : size_(size + 1)    // +1 because one slot is always empty
+    , records_(static_cast<T*>(std::malloc(sizeof(T) * (size + 1))))
     , readIndex_(0)
     , writeIndex_(0)
   {
-    assert(size >= 2);
+    assert(size >= 1);
     if (!records_) {
       throw std::bad_alloc();
     }
