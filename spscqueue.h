@@ -35,7 +35,23 @@ public:
       node* n = new node; 
       n->next_ = 0; 
       tail_ = head_ = first_= tail_copy_ = n; 
-  } 
+  }
+
+  explicit spsc_queue(size_t prealloc)
+  {
+      node* n = new node;
+      n->next_ = 0;
+      tail_ = head_ = first_ = tail_copy_ = n;
+
+      // [CD] Not (at all) the most efficient way to pre-allocate memory, but it works
+      T dummy;
+      for (size_t i = 0; i != prealloc; ++i) {
+          enqueue(dummy);
+      }
+      for (size_t i = 0; i != prealloc; ++i) {
+          try_dequeue(dummy);
+      }
+  }
 
   ~spsc_queue() 
   { 

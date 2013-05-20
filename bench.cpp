@@ -1,5 +1,6 @@
-#include "spscqueue.h"
-#include "readerwriterqueue.h"
+#include "spscqueue.h"                  // Dmitry's (on Intel site)
+#include "ProducerConsumerQueue.h"      // Facebook's folly (GitHub)
+#include "readerwriterqueue.h"          // Mine (C.D.)
 #include "systemtime.h"
 #include "simplethread.h"
 
@@ -11,6 +12,7 @@
 #include <ctime>
 
 using namespace moodycamel;
+using namespace folly;
 
 
 typedef std::minstd_rand RNG_t;
@@ -52,10 +54,12 @@ int main(int argc, char** argv)
 
 	double rwqResults[BENCHMARK_COUNT][TEST_COUNT];
 	double spscResults[BENCHMARK_COUNT][TEST_COUNT];
+	double follyResults[BENCHMARK_COUNT][TEST_COUNT];
 	
 	// Also calculate a rough heuristic of "ops/s" (across all runs, not just fastest)
 	double rwqOps[BENCHMARK_COUNT][TEST_COUNT];
 	double spscOps[BENCHMARK_COUNT][TEST_COUNT];
+	double follyOps[BENCHMARK_COUNT][TEST_COUNT];
 
 	// Make sure the randomness of each benchmark run is identical
 	unsigned int randSeeds[BENCHMARK_COUNT];
@@ -71,36 +75,45 @@ int main(int argc, char** argv)
 		for (int i = 0; i < TEST_COUNT; ++i) {
 			spscResults[benchmark][i] = runBenchmark<spsc_queue<int>>((BenchmarkType)benchmark, randSeeds[benchmark], spscOps[benchmark][i]);
 		}
+		for (int i = 0; i < TEST_COUNT; ++i) {
+			follyResults[benchmark][i] = runBenchmark<ProducerConsumerQueue<int>>((BenchmarkType)benchmark, randSeeds[benchmark], follyOps[benchmark][i]);
+		}
 	}
 
 	// Sort results
 	for (int benchmark = 0; benchmark < BENCHMARK_COUNT; ++benchmark) {
 		std::sort(&rwqResults[benchmark][0], &rwqResults[benchmark][0] + TEST_COUNT);
 		std::sort(&spscResults[benchmark][0], &spscResults[benchmark][0] + TEST_COUNT);
+		std::sort(&follyResults[benchmark][0], &follyResults[benchmark][0] + TEST_COUNT);
 	}
 	
 	// Display results
 	int max = std::max(2, (int)(TEST_COUNT * FASTEST_PERCENT_CONSIDERED / 100));
 	assert(max > 0);
-	std::cout              << std::setw(BENCHMARK_NAME_MAX) << "         " << " |        Min        |        Max        |        Avg               \n";
-	std::cout << std::left << std::setw(BENCHMARK_NAME_MAX) << "Benchmark" << " |   RWQ   |  SPSC   |   RWQ   |  SPSC   |   RWQ   |  SPSC   | Mult \n";
+	std::cout              << std::setw(BENCHMARK_NAME_MAX) << "         " << " |-----------  Min ------------|------------ Max ------------|------------ Avg ------------|\n";
+	std::cout << std::left << std::setw(BENCHMARK_NAME_MAX) << "Benchmark" << " |   RWQ   |  SPSC   |  Folly  |   RWQ   |  SPSC   |  Folly  |   RWQ   |  SPSC   |  Folly  | xSPSC | xFolly\n";
 	std::cout.fill('-');
-	std::cout              << std::setw(BENCHMARK_NAME_MAX) << "---------" << "-+---------+---------+---------+---------+---------+---------+------\n";
+	std::cout              << std::setw(BENCHMARK_NAME_MAX) << "---------" << "-+---------+---------+---------+---------+---------+---------+---------+---------+---------+-------+-------\n";
 	std::cout.fill(' ');
-	double rwqOpsPerSec = 0, spscOpsPerSec = 0;
+	double rwqOpsPerSec = 0, spscOpsPerSec = 0, follyOpsPerSec = 0;
 	int opTimedBenchmarks = 0;
 	for (int benchmark = 0; benchmark < BENCHMARK_COUNT; ++benchmark) {
 		double rwqMin = rwqResults[benchmark][0], rwqMax = rwqResults[benchmark][max - 1];
 		double spscMin = spscResults[benchmark][0], spscMax = spscResults[benchmark][max - 1];
+		double follyMin = follyResults[benchmark][0], follyMax = follyResults[benchmark][max - 1];
 		double rwqAvg = std::accumulate(&rwqResults[benchmark][0], &rwqResults[benchmark][0] + max, 0.0) / max;
 		double spscAvg = std::accumulate(&spscResults[benchmark][0], &spscResults[benchmark][0] + max, 0.0) / max;
-		double mult = rwqAvg < 0.00001 ? 0 : spscAvg / rwqAvg;
+		double follyAvg = std::accumulate(&follyResults[benchmark][0], &follyResults[benchmark][0] + max, 0.0) / max;
+		double spscMult = rwqAvg < 0.00001 ? 0 : spscAvg / rwqAvg;
+		double follyMult = follyAvg < 0.00001 ? 0 : follyAvg / rwqAvg;
 
 		if (rwqResults[benchmark][0] != -1) {
 			double rwqTotalAvg = std::accumulate(&rwqResults[benchmark][0], &rwqResults[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT;
 			double spscTotalAvg = std::accumulate(&spscResults[benchmark][0], &spscResults[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT;
+			double follyTotalAvg = std::accumulate(&follyResults[benchmark][0], &follyResults[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT;
 			rwqOpsPerSec += std::accumulate(&rwqOps[benchmark][0], &rwqOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / rwqTotalAvg;
 			spscOpsPerSec += std::accumulate(&spscOps[benchmark][0], &spscOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / spscTotalAvg;
+			follyOpsPerSec += std::accumulate(&follyOps[benchmark][0], &follyOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / follyTotalAvg;
 			++opTimedBenchmarks;
 		}
 
@@ -108,22 +121,28 @@ int main(int argc, char** argv)
 			<< std::left << std::setw(BENCHMARK_NAME_MAX) << benchmarkName((BenchmarkType)benchmark) << " | "
 			<< std::fixed << std::setprecision(4) << rwqMin << "s | "
 			<< std::fixed << std::setprecision(4) << spscMin << "s | "
+			<< std::fixed << std::setprecision(4) << follyMin << "s | "
 			<< std::fixed << std::setprecision(4) << rwqMax << "s | "
 			<< std::fixed << std::setprecision(4) << spscMax << "s | "
+			<< std::fixed << std::setprecision(4) << follyMax << "s | "
 			<< std::fixed << std::setprecision(4) << rwqAvg << "s | "
 			<< std::fixed << std::setprecision(4) << spscAvg << "s | "
-			<< std::fixed << std::setprecision(1) << mult << "x"
+			<< std::fixed << std::setprecision(4) << follyAvg << "s | "
+			<< std::fixed << std::setprecision(2) << spscMult << "x | "
+			<< std::fixed << std::setprecision(2) << follyMult << "x"
 			<< "\n"
 		;
 	}
 
 	rwqOpsPerSec /= opTimedBenchmarks;
 	spscOpsPerSec /= opTimedBenchmarks;
+	follyOpsPerSec /= opTimedBenchmarks;
 
 	std::cout
 		<< "\nAverage ops/s:\n"
 		<< "    ReaderWriterQueue: " << std::fixed << std::setprecision(2) << rwqOpsPerSec / 1000000 << " million\n"
 		<< "    SPSC queue:        " << std::fixed << std::setprecision(2) << spscOpsPerSec / 1000000 << " million\n"
+		<< "    Folly queue:       " << std::fixed << std::setprecision(2) << follyOpsPerSec / 1000000 << " million\n"
 	;
 	std::cout << std::endl;
 
@@ -144,7 +163,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 	case bench_raw_add: {
 		const counter_t MAX = 100 * 1000;
 		out_Ops = MAX;
-		TQueue q;
+		TQueue q(MAX);
 		int num = 0;
 		start = getSystemTime();
 		for (counter_t i = 0; i != MAX; ++i) {
@@ -160,7 +179,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 	case bench_raw_remove: {
 		const counter_t MAX = 100 * 1000;
 		out_Ops = MAX;
-		TQueue q;
+		TQueue q(MAX);
 		int num = 0;
 		for (counter_t i = 0; i != MAX; ++i) {
 			q.enqueue(num);
@@ -183,7 +202,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 	case bench_empty_remove: {
 		const counter_t MAX = 400 * 1000;
 		out_Ops = MAX;
-		TQueue q;
+		TQueue q(MAX);
 		int total = 0;
 		start = getSystemTime();
 		SimpleThread consumer([&]() {
@@ -213,7 +232,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 		out_Ops = MAX;
 		RNG_t rng(randomSeed);
 		std::uniform_int_distribution<int> rand(0, 1);
-		TQueue q;
+		TQueue q(MAX);
 		int num = 0;
 		int element;
 		start = getSystemTime();
@@ -235,7 +254,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 		int readOps = 0;
 		RNG_t rng(randomSeed);
 		std::uniform_int_distribution<int> rand(0, 7);
-		TQueue q;
+		TQueue q(MAX);
 		int element;
 		start = getSystemTime();
 		SimpleThread consumer([&]() {
@@ -265,7 +284,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 		int writeOps = 0;
 		RNG_t rng(randomSeed);
 		std::uniform_int_distribution<int> rand(0, 7);
-		TQueue q;
+		TQueue q(MAX);
 		int element;
 		start = getSystemTime();
 		SimpleThread consumer([&]() {
@@ -292,7 +311,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 	case bench_heavy_concurrent: {
 		const counter_t MAX = 300 * 1000;
 		out_Ops = MAX * 2;
-		TQueue q;
+		TQueue q(MAX);
 		int element;
 		start = getSystemTime();
 		SimpleThread consumer([&]() {
@@ -315,7 +334,7 @@ double runBenchmark(BenchmarkType benchmark, unsigned int randomSeed, double& ou
 	case bench_random_concurrent: {
 		const counter_t MAX = 800 * 1000;
 		int readOps = 0, writeOps = 0;
-		TQueue q;
+		TQueue q(MAX);
 		int element;
 		start = getSystemTime();
 		SimpleThread consumer([&]() {
