@@ -1,3 +1,6 @@
+This license applies to all the code in this repository except that written by third
+parties, namely ProducerConsumerQueue.h and spscqueue.h, which have their own licenses.
+
 Copyright (c) 2013, Cameron Desrochers  
 All rights reserved.
 
