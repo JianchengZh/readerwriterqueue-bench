@@ -56,7 +56,7 @@ struct ProducerConsumerQueue {
     // We need to destruct anything that may still exist in our queue.
     // (No real synchronization needed at destructor time: only one
     // thread can be doing this.)
-    if (!std::has_trivial_destructor<T>::value) {
+    if (!std::is_trivially_destructible<T>::value) {
       int read = readIndex_;
       int end = writeIndex_;
       while (read != end) {
