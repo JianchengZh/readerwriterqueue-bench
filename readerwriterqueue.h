@@ -1,4 +1,4 @@
-﻿// ©2013 Cameron Desrochers.
+// ©2013 Cameron Desrochers.
 // Distributed under the simplified BSD license (see the license file that
 // should have come with this header).
 
@@ -27,6 +27,13 @@
 // Using the queue exclusively from one thread is fine, though a bit silly.
 
 #define CACHE_LINE_SIZE 64
+
+#ifdef AE_VCPP
+#pragma warning(push)
+#pragma warning(disable: 4324)	// structure was padded due to __declspec(align())
+#pragma warning(disable: 4820)	// padding was added
+#pragma warning(disable: 4127)	// conditional expression is constant
+#endif
 
 namespace moodycamel {
 
@@ -94,6 +101,7 @@ public:
 			for (size_t i = blockFront; i != blockTail; i = (i + 1) & block->sizeMask()) {
 				auto element = reinterpret_cast<T*>(block->data + i * sizeof(T));
 				element->~T();
+				(void)element;
 			}
 
 			delete block;
@@ -257,7 +265,7 @@ private:
 			// tailBlock is full, but there's a free block ahead, use it
 			Block* tailBlockNext = tailBlock_->next.load();
 			size_t nextBlockFront = tailBlockNext->front.load();
-			size_t nextBlockTail = tailBlockNext->tail.load();
+			nextBlockTail = tailBlockNext->tail.load();
 			fence(memory_order_acquire);
 
 			// This block must be empty since it's not the head block and we
@@ -322,10 +330,8 @@ private:
 		x |= x >> 1;
 		x |= x >> 2;
 		x |= x >> 4;
-		x |= x >> 8;
-		x |= x >> 16;
-		if (sizeof(size_t) > 4U) {
-			x |= x >> 32;
+		for (size_t i = 1; i < sizeof(size_t); i <<= 1) {
+			x |= x >> (i << 3);
 		}
 		++x;
 		return x;
@@ -334,8 +340,8 @@ private:
 #ifndef NDEBUG
 	struct ReentrantGuard
 	{
-		ReentrantGuard(bool& inSection)
-			: inSection(inSection)
+		ReentrantGuard(bool& _inSection)
+			: inSection(_inSection)
 		{
 			assert(!inSection);
 			if (inSection) {
@@ -346,6 +352,9 @@ private:
 		}
 
 		~ReentrantGuard() { inSection = false; }
+
+	private:
+		ReentrantGuard& operator=(ReentrantGuard const&);
 
 	private:
 		bool& inSection;
@@ -372,8 +381,8 @@ private:
 
 
 		// size must be a power of two (and greater than 0)
-		Block(size_t const& size)
-			: front(0), tail(0), next(nullptr), size(size)
+		Block(size_t const& _size)
+			: front(0), tail(0), next(nullptr), size(_size)
 		{
 			// Allocate enough memory for an array of Ts, aligned
 			size_t alignment = std::alignment_of<T>::value;
@@ -389,6 +398,10 @@ private:
 		{
 			std::free(rawData);
 		}
+
+	private:
+		// C4512 - Assignment operator could not be generated
+		Block& operator=(Block const&);
 
 	private:
 		char* rawData;
@@ -411,3 +424,7 @@ private:
 };
 
 }    // end namespace moodycamel
+
+#ifdef AE_VCPP
+#pragma warning(pop)
+#endif

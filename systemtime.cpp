@@ -13,6 +13,9 @@
 
 #include <windows.h>
 
+namespace moodycamel
+{
+
 void sleep(int milliseconds)
 {
 	::Sleep(milliseconds);
@@ -49,9 +52,14 @@ double getTimeDelta(SystemTime start)
 	return static_cast<double>(static_cast<__int64>(now - start)) / f.QuadPart * 1000;
 }
 
+}
+
 #elif defined(ST_NIX)
 
 #include <unistd.h>
+
+namespace moodycamel
+{
 
 void sleep(int milliseconds)
 {
@@ -81,6 +89,8 @@ double getTimeDelta(SystemTime start)
 	CompilerMemBar();
 
 	return static_cast<double>(static_cast<long>(t.tv_sec) - static_cast<long>(start.tv_sec)) * 1000 + double(t.tv_nsec - start.tv_nsec) / 1000000;
+}
+
 }
 
 #endif
