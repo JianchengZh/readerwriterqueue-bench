@@ -1,5 +1,11 @@
+#if defined(_MSC_VER) && _MSC_VER < 1700
+#define NO_FOLLY_SUPPORT
+#endif
+
 #include "spscqueue.h"                  // Dmitry's (on Intel site)
+#ifndef NO_FOLLY_SUPPORT
 #include "ProducerConsumerQueue.h"      // Facebook's folly (GitHub)
+#endif
 #include "readerwriterqueue.h"          // Mine (C.D.)
 #include "systemtime.h"
 #include "simplethread.h"
@@ -12,7 +18,9 @@
 #include <ctime>
 
 using namespace moodycamel;
+#ifndef NO_FOLLY_SUPPORT
 using namespace folly;
+#endif
 
 
 typedef std::minstd_rand RNG_t;
@@ -75,9 +83,16 @@ int main(int argc, char** argv)
 		for (int i = 0; i < TEST_COUNT; ++i) {
 			spscResults[benchmark][i] = runBenchmark<spsc_queue<int>>((BenchmarkType)benchmark, randSeeds[benchmark], spscOps[benchmark][i]);
 		}
+#ifndef NO_FOLLY_SUPPORT
 		for (int i = 0; i < TEST_COUNT; ++i) {
 			follyResults[benchmark][i] = runBenchmark<ProducerConsumerQueue<int>>((BenchmarkType)benchmark, randSeeds[benchmark], follyOps[benchmark][i]);
 		}
+#else
+		for (int i = 0; i < TEST_COUNT; ++i) {
+			follyResults[benchmark][i] = 0;
+			follyOps[benchmark][i] = 0;
+		}
+#endif
 	}
 
 	// Sort results
@@ -90,6 +105,9 @@ int main(int argc, char** argv)
 	// Display results
 	int max = std::max(2, (int)(TEST_COUNT * FASTEST_PERCENT_CONSIDERED / 100));
 	assert(max > 0);
+#ifdef NO_FOLLY_SUPPORT
+	std::cout << "Note: Folly queue not supported by this compiler, discount its timings" << std::endl;
+#endif
 	std::cout              << std::setw(BENCHMARK_NAME_MAX) << "         " << " |-----------  Min ------------|------------ Max ------------|------------ Avg ------------|\n";
 	std::cout << std::left << std::setw(BENCHMARK_NAME_MAX) << "Benchmark" << " |   RWQ   |  SPSC   |  Folly  |   RWQ   |  SPSC   |  Folly  |   RWQ   |  SPSC   |  Folly  | xSPSC | xFolly\n";
 	std::cout.fill('-');
@@ -111,9 +129,9 @@ int main(int argc, char** argv)
 			double rwqTotalAvg = std::accumulate(&rwqResults[benchmark][0], &rwqResults[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT;
 			double spscTotalAvg = std::accumulate(&spscResults[benchmark][0], &spscResults[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT;
 			double follyTotalAvg = std::accumulate(&follyResults[benchmark][0], &follyResults[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT;
-			rwqOpsPerSec += std::accumulate(&rwqOps[benchmark][0], &rwqOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / rwqTotalAvg;
-			spscOpsPerSec += std::accumulate(&spscOps[benchmark][0], &spscOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / spscTotalAvg;
-			follyOpsPerSec += std::accumulate(&follyOps[benchmark][0], &follyOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / follyTotalAvg;
+			rwqOpsPerSec += rwqTotalAvg == 0 ? 0 : std::accumulate(&rwqOps[benchmark][0], &rwqOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / rwqTotalAvg;
+			spscOpsPerSec += spscTotalAvg == 0 ? 0 : std::accumulate(&spscOps[benchmark][0], &spscOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / spscTotalAvg;
+			follyOpsPerSec += follyTotalAvg == 0 ? 0 : std::accumulate(&follyOps[benchmark][0], &follyOps[benchmark][0] + TEST_COUNT, 0.0) / TEST_COUNT / follyTotalAvg;
 			++opTimedBenchmarks;
 		}
 
